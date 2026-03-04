@@ -1,0 +1,7 @@
+# Ignorar llaves secretas de Google Cloud
+*.json
+!config.json
+
+# Ignorar entornos virtuales de Python
+.venv/
+__pycache__/
