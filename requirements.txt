@@ -1,0 +1,6 @@
+yfinance
+pandas
+pyarrow
+google-cloud-storage
+google-cloud-bigquery
+scipy
