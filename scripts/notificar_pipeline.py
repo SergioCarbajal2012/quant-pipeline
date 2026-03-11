@@ -28,7 +28,7 @@ def main():
             sys.exit(1)
 
         mensaje = (
-            "✅ *Pipeline Diario Completado con éxito*\n"
+            "*Pipeline Diario Completado con éxito*\n"
             f"Duración total: {minutos}m {segundos}s\n"
             f"Finalizado: {fin.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
