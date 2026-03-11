@@ -30,7 +30,13 @@ jobs:
       run: |
         echo "$GCP_SECRETO" > gcp_credentials.json
 
-    - name: 5. Ejecutar script ETL
+    - name: 5. Ejecutar ETL de Precios
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: python scripts/etl_precios.py
+
+    - name: 6. Ejecutar ETL de Opciones
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

@@ -1,82 +1,82 @@
-# Sistema Quant
+# Quant System
 
-Sistema de trading cuantitativo automatizado que combina modelos de Machine Learning (XGBoost), pipelines ETL en la nube y notificaciones en tiempo real para operar opciones financieras sobre activos del mercado estadounidense.
-
----
-
-## Descripcion General
-
-El sistema extrae cadenas de opciones desde Yahoo Finance, las almacena en un Data Lake en Google Cloud Storage y aplica modelos predictivos entrenados sobre los activos configurados. Las alertas y resultados se envian por Telegram.
+An automated quantitative trading system that combines Machine Learning models (XGBoost), cloud-based ETL pipelines, and real-time notifications to trade financial options on US market assets.
 
 ---
 
-## Activos Operativos
+## Overview
 
-| Ticker | Tipo      | Modelo ML                     |
-|--------|-----------|-------------------------------|
-| SPY    | ETF       | `models/xgboost_spy.pkl`      |
-| QQQ    | ETF       | `models/xgboost_qqq.pkl`      |
-| NVDA   | Accion    | `models/xgboost_nvda.pkl`     |
-| TSLA   | Accion    | `models/xgboost_tsla.pkl`     |
-| AAPL   | Accion    | `models/xgboost_aapl.pkl`     |
+The system extracts options chains from Yahoo Finance, stores them in a Data Lake on Google Cloud Storage, and applies pre-trained predictive models to the configured assets. Alerts and results are delivered via Telegram.
 
 ---
 
-## Arquitectura
+## Operative Assets
+
+| Ticker | Type   | ML Model                      |
+|--------|--------|-------------------------------|
+| SPY    | ETF    | `models/xgboost_spy.pkl`      |
+| QQQ    | ETF    | `models/xgboost_qqq.pkl`      |
+| NVDA   | Stock  | `models/xgboost_nvda.pkl`     |
+| TSLA   | Stock  | `models/xgboost_tsla.pkl`     |
+| AAPL   | Stock  | `models/xgboost_aapl.pkl`     |
+
+---
+
+## Architecture
 
 ```
 Yahoo Finance (yfinance)
         │
         ▼
- etl_opciones.py          ← Extrae cadena de opciones (calls & puts)
-        │                    Procesa las 3 proximas expiraciones
-        │                    Agrega ticker, fecha_captura
+ etl_opciones.py          ← Extracts options chain (calls & puts)
+        │                    Processes the next 3 expiration dates
+        │                    Adds ticker and capture_date fields
         ▼
-Google Cloud Storage      ← Data Lake - Capa Bronce
+Google Cloud Storage      ← Data Lake - Bronze Layer
   gs://datalake-quant-451704/
   └── opciones/bronce/{TICKER}_{YYYYMMDD}.parquet
         │
         ▼
-Google BigQuery           ← Analitica y consultas SQL
+Google BigQuery           ← Analytics and SQL queries
         │
         ▼
-  daily_trader.py         ← Ejecucion diaria: senales y ordenes
+  daily_trader.py         ← Daily execution: signals and orders
         │
         ▼
-  Notificaciones Telegram  ← Alertas al finalizar pipeline
+  Telegram Notifications  ← Alerts on pipeline completion
 ```
 
 ---
 
-## Estructura del Proyecto
+## Project Structure
 
 ```
 sistema-quant/
-├── config.json             # Activos operativos y rutas de modelos
-├── requirements.txt        # Dependencias Python
-├── gcp_credentials.json    # Credenciales GCP (no incluir en control de versiones)
-├── models/                 # Modelos XGBoost entrenados (.pkl)
+├── config.json             # Operative assets and model paths
+├── requirements.txt        # Python dependencies
+├── gcp_credentials.json    # GCP credentials (never commit to version control)
+├── models/                 # Trained XGBoost models (.pkl)
 │   ├── xgboost_spy.pkl
 │   ├── xgboost_qqq.pkl
 │   ├── xgboost_nvda.pkl
 │   ├── xgboost_tsla.pkl
 │   └── xgboost_aapl.pkl
 └── scripts/
-    ├── etl_opciones.py     # Pipeline ETL: extraccion y carga al Data Lake
-    └── daily_trader.py     # Trader diario: generacion de senales y ejecucion
+    ├── etl_opciones.py     # ETL pipeline: extraction and upload to Data Lake
+    └── daily_trader.py     # Daily trader: signal generation and execution
 ```
 
 ---
 
-## Requisitos
+## Requirements
 
 - Python 3.9+
-- Cuenta de Google Cloud Platform con los siguientes servicios habilitados:
+- Google Cloud Platform account with the following services enabled:
   - Cloud Storage
   - BigQuery
-- Bot de Telegram configurado
+- Configured Telegram bot
 
-### Instalacion de dependencias
+### Install dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -84,35 +84,35 @@ pip install -r requirements.txt
 
 ---
 
-## Configuracion
+## Configuration
 
-### 1. Credenciales GCP
+### 1. GCP Credentials
 
-Coloca tu archivo de credenciales de servicio en la raiz del proyecto:
+Place your service account credentials file at the root of the project:
 
 ```
 sistema-quant/gcp_credentials.json
 ```
 
-> **Importante:** Este archivo nunca debe subirse a un repositorio publico. Agrega `gcp_credentials.json` a tu `.gitignore`.
+> **Important:** This file must never be pushed to a public repository. Add `gcp_credentials.json` to your `.gitignore`.
 
-### 2. Variables de entorno para Telegram
+### 2. Telegram environment variables
 
 ```bash
 # Windows (PowerShell)
-$env:TELEGRAM_BOT_TOKEN = "tu_token_aqui"
-$env:TELEGRAM_CHAT_ID   = "tu_chat_id_aqui"
+$env:TELEGRAM_BOT_TOKEN = "your_token_here"
+$env:TELEGRAM_CHAT_ID   = "your_chat_id_here"
 ```
 
 ```bash
 # Linux / macOS
-export TELEGRAM_BOT_TOKEN="tu_token_aqui"
-export TELEGRAM_CHAT_ID="tu_chat_id_aqui"
+export TELEGRAM_BOT_TOKEN="your_token_here"
+export TELEGRAM_CHAT_ID="your_chat_id_here"
 ```
 
-### 3. Configuracion de activos (`config.json`)
+### 3. Asset configuration (`config.json`)
 
-Edita `config.json` para agregar o quitar activos y apuntar a los modelos correspondientes:
+Edit `config.json` to add or remove assets and point to the corresponding models:
 
 ```json
 {
@@ -124,31 +124,31 @@ Edita `config.json` para agregar o quitar activos y apuntar a los modelos corres
 
 ---
 
-## Uso
+## Usage
 
-### Ejecutar el pipeline ETL de opciones
+### Run the options ETL pipeline
 
-Descarga las cadenas de opciones de todos los activos configurados y los sube a la capa Bronce del Data Lake:
+Downloads the options chains for all configured assets and uploads them to the Bronze layer of the Data Lake:
 
 ```bash
 python scripts/etl_opciones.py
 ```
 
-**Salida esperada:**
+**Expected output:**
 
 ```
-[INFO] Se encontraron 5 activos en config.json: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL']
-[INFO] INICIANDO EXTRACCION PARA: SPY
-[INFO] Descargando datos para SPY desde Yahoo Finance...
-       -> Procesando expiracion: 2026-03-20
-       -> Procesando expiracion: 2026-03-27
-       -> Procesando expiracion: 2026-04-17
-[EXITO] Archivo guardado en Data Lake: gs://datalake-quant-451704/opciones/bronce/SPY_20260310.parquet
+[INFO] Found 5 assets in config.json: ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AAPL']
+[INFO] STARTING EXTRACTION FOR: SPY
+[INFO] Downloading data for SPY from Yahoo Finance...
+       -> Processing expiration: 2026-03-20
+       -> Processing expiration: 2026-03-27
+       -> Processing expiration: 2026-04-17
+[SUCCESS] File saved to Data Lake: gs://datalake-quant-451704/opciones/bronce/SPY_20260310.parquet
 ...
-[INFO] Pipeline finalizado exitosamente para todos los activos.
+[INFO] Pipeline completed successfully for all assets.
 ```
 
-### Ejecutar el trader diario
+### Run the daily trader
 
 ```bash
 python scripts/daily_trader.py
@@ -156,37 +156,37 @@ python scripts/daily_trader.py
 
 ---
 
-## Data Lake — Arquitectura Medallion
+## Data Lake — Medallion Architecture
 
-Los datos se organizan siguiendo la arquitectura Medallion:
+Data is organized following the Medallion architecture:
 
-| Capa     | Ruta GCS                                      | Descripcion                        |
-|----------|-----------------------------------------------|------------------------------------|
-| Bronce   | `opciones/bronce/{TICKER}_{YYYYMMDD}.parquet` | Datos crudos directamente de origen |
-| Plata    | `opciones/plata/...`                          | Datos limpios y normalizados        |
-| Oro      | `opciones/oro/...`                            | Agregados y features para modelos   |
-
----
-
-## Dependencias
-
-| Libreria               | Uso                                       |
-|------------------------|-------------------------------------------|
-| `yfinance`             | Descarga de datos de mercado y opciones   |
-| `pandas`               | Manipulacion y transformacion de datos    |
-| `pyarrow`              | Serializacion en formato Parquet          |
-| `google-cloud-storage` | Subida de archivos al Data Lake (GCS)     |
-| `google-cloud-bigquery`| Carga y consulta de datos en BigQuery     |
-| `scipy`                | Calculos estadisticos y cuantitativos     |
-| `requests`             | Notificaciones via Telegram API           |
+| Layer  | GCS Path                                      | Description                        |
+|--------|-----------------------------------------------|------------------------------------|
+| Bronze | `opciones/bronce/{TICKER}_{YYYYMMDD}.parquet` | Raw data directly from the source  |
+| Silver | `opciones/plata/...`                          | Cleaned and normalized data        |
+| Gold   | `opciones/oro/...`                            | Aggregated features for ML models  |
 
 ---
 
-## Seguridad
+## Dependencies
 
-- Las credenciales de GCP y los tokens de Telegram **nunca** deben estar hardcodeados en el codigo.
-- Usa variables de entorno o un gestor de secretos (e.g., Google Secret Manager) en produccion.
-- Agrega al `.gitignore`:
+| Library                | Purpose                                      |
+|------------------------|----------------------------------------------|
+| `yfinance`             | Market data and options chain download       |
+| `pandas`               | Data manipulation and transformation         |
+| `pyarrow`              | Parquet format serialization                 |
+| `google-cloud-storage` | File upload to Data Lake (GCS)               |
+| `google-cloud-bigquery`| Data loading and querying in BigQuery        |
+| `scipy`                | Statistical and quantitative calculations    |
+| `requests`             | Telegram API notifications                   |
+
+---
+
+## Security
+
+- GCP credentials and Telegram tokens must **never** be hardcoded in the source code.
+- Use environment variables or a secrets manager (e.g., Google Secret Manager) in production.
+- Add the following to your `.gitignore`:
   ```
   gcp_credentials.json
   *.pkl
@@ -195,6 +195,6 @@ Los datos se organizan siguiendo la arquitectura Medallion:
 
 ---
 
-## Licencia
+## License
 
-Uso privado. Todos los derechos reservados.
+Private use. All rights reserved.
