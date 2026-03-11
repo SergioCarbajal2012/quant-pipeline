@@ -1,0 +1,9 @@
+{
+  "activos_operativos": {
+    "SPY": { "modelo": "models/xgboost_spy.pkl" },
+    "QQQ": { "modelo": "models/xgboost_qqq.pkl" },
+    "NVDA": { "modelo": "models/xgboost_nvda.pkl" },
+    "TSLA": { "modelo": "models/xgboost_tsla.pkl" },
+    "AAPL": { "modelo": "models/xgboost_aapl.pkl" }
+  }
+}

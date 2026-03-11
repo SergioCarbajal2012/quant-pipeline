@@ -31,4 +31,7 @@ jobs:
         echo "$GCP_SECRETO" > gcp_credentials.json
 
     - name: 5. Ejecutar script ETL
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python scripts/etl_opciones.py
