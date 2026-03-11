@@ -128,8 +128,7 @@ def main():
     # Bloque de notificacion final
     mensaje_alerta = (
         "*Pipeline ETL Opciones (Capa Bronce)*\n"
-        f"Fecha: {fecha_str}\n"
-        f"Activos guardados ({len(activos)}): {', '.join(activos)}\n"
+        f"Total de activos procesados: {len(activos)}\n"
         "Estado: COMPLETADO"
     )
     notificar_telegram(mensaje_alerta)
