@@ -54,6 +54,11 @@ jobs:
 
     - name: 9. Ejecutar ETL Earnings (Calendario)
       run: python scripts/etl_earnings.py
+    
+    - name: 9b. Ejecutar Transformacion Capa Plata (Griegas)
+      env:
+        GCP_SECRETO: ${{ secrets.GCP_CREDENTIALS }}
+      run: python scripts/transformacion_plata.py
 
     - name: 10. Notificar Telegram
       env:
