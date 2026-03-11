@@ -2,7 +2,6 @@ import os
 import json
 import yfinance as yf
 import pandas as pd
-import requests
 from datetime import datetime, timezone
 from google.cloud import storage
 
@@ -22,17 +21,6 @@ def cargar_configuracion():
             return json.load(archivo)
     except FileNotFoundError:
         return None
-
-def notificar_telegram(mensaje):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "Markdown"}
-        try:
-            requests.post(url, json=payload)
-        except:
-            pass
 
 def extraer_proximo_reporte(ticker_symbol):
     ticker = yf.Ticker(ticker_symbol)
@@ -107,12 +95,6 @@ def main():
         blob.upload_from_filename(archivo_temp)
         
         print(f"\n[EXITO] Calendario guardado en gs://{bucket_name}/earnings/bronce/")
-        
-        notificar_telegram(
-            "*Pipeline Earnings (Capa Bronce)*\n"
-            f"Activos procesados: {len(activos)}\n"
-            "Status: COMPLETADO"
-        )
     finally:
         if os.path.exists(archivo_temp):
             os.remove(archivo_temp)

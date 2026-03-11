@@ -13,17 +13,6 @@ def configurar_autenticacion_local():
     if os.path.exists(ruta_credenciales):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ruta_credenciales
 
-def notificar_telegram(mensaje):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if token and chat_id:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "Markdown"}
-        try:
-            requests.post(url, json=payload)
-        except:
-            pass
-
 def extraer_serie_fred(api_key, series_id):
     """Extrae el valor mas reciente de cualquier serie de la FRED."""
     url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json&sort_order=desc&limit=1"
@@ -98,12 +87,6 @@ def main():
         blob.upload_from_filename(archivo_temp)
         
         print(f"[EXITO] Datos macro guardados en gs://{bucket_name}/macro/bronce/")
-        
-        notificar_telegram(
-            "*Pipeline Macro (Capa Bronce)*\n"
-            "Status: COMPLETADO\n"
-            f"Variables: {', '.join(datos_finales.keys())}"
-        )
     finally:
         if os.path.exists(archivo_temp):
             os.remove(archivo_temp)

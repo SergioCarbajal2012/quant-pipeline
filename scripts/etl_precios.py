@@ -2,7 +2,6 @@ import os
 import json
 import yfinance as yf
 import pandas as pd
-import requests
 from datetime import datetime, timezone
 from google.cloud import storage
 
@@ -28,28 +27,6 @@ def cargar_configuracion():
     except FileNotFoundError:
         print("[ERROR] No se encontro config.json")
         return None
-
-def notificar_telegram(mensaje):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    
-    if not token or not chat_id:
-        print("[WARN] Credenciales de Telegram no encontradas. Saltando notificacion.")
-        return
-        
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": mensaje,
-        "parse_mode": "Markdown"
-    }
-    
-    try:
-        respuesta = requests.post(url, json=payload)
-        respuesta.raise_for_status()
-        print("[INFO] Notificacion de Telegram enviada correctamente.")
-    except Exception as e:
-        print(f"[ERROR] Fallo al enviar notificacion de Telegram: {e}")
 
 def extraer_precio_diario(ticker_symbol):
     print(f"[INFO] Descargando vela diaria (OHLCV) para {ticker_symbol}...")
@@ -127,14 +104,6 @@ def main():
             subir_a_datalake(df_precio, bucket_datalake, ruta_gcs)
             activos_procesados += 1
             
-    # Notificacion limpia de cierre
-    mensaje_alerta = (
-        "*Pipeline ETL Precios (Capa Bronce)*\n"
-        f"Total de activos procesados: {activos_procesados}\n"
-        "Estado: COMPLETADO"
-    )
-    notificar_telegram(mensaje_alerta)
-    
     print("\n[INFO] Pipeline de precios finalizado exitosamente.")
 
 if __name__ == "__main__":
