@@ -10,6 +10,9 @@ jobs:
   extraer_y_guardar_datalake:
     runs-on: ubuntu-latest
 
+    env:
+      PIPELINE_START: ${{ github.event.repository.updated_at }}
+
     steps:
     - name: 1. Descargar el codigo del repositorio
       uses: actions/checkout@v3
@@ -30,34 +33,30 @@ jobs:
       run: |
         echo "$GCP_SECRETO" > gcp_credentials.json
 
+    - name: 4b. Registrar tiempo de inicio
+      run: echo "PIPELINE_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+
     - name: 5. Ejecutar ETL de Precios
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python scripts/etl_precios.py
 
     - name: 6. Ejecutar ETL de Opciones
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python scripts/etl_opciones.py
 
     - name: 7. Ejecutar ETL Macro (FRED/Yahoo)
       env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       run: python scripts/etl_macro.py
 
     - name: 8. Ejecutar ETL Sentimiento (FinBERT)
       env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
       run: python scripts/etl_sentiment.py
 
     - name: 9. Ejecutar ETL Earnings (Calendario)
+      run: python scripts/etl_earnings.py
+
+    - name: 10. Notificar Telegram
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python scripts/etl_earnings.py
+      run: python scripts/notificar_pipeline.py --inicio "${{ env.PIPELINE_START }}"
