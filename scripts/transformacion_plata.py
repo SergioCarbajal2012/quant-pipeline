@@ -5,6 +5,7 @@ import pandas as pd
 from scipy.stats import norm
 from datetime import datetime, timezone
 from google.cloud import storage
+from google.cloud import bigquery
 
 def configurar_autenticacion_local():
     ruta_script = os.path.abspath(__file__)
@@ -24,7 +25,7 @@ def cargar_configuracion():
         return None
 
 def descargar_parquet_gcs(bucket_name, ruta_blob, archivo_temp):
-    """Descarga un archivo desde GCS a local temporalmente para leerlo."""
+    """Descarga un archivo desde GCS y devuelve un DataFrame. Retorna None si no existe."""
     try:
         cliente = storage.Client()
         bucket = cliente.bucket(bucket_name)
@@ -39,133 +40,157 @@ def descargar_parquet_gcs(bucket_name, ruta_blob, archivo_temp):
         print(f"[ERROR] Fallo al descargar {ruta_blob}: {e}")
         return None
 
-def subir_parquet_gcs(df, bucket_name, ruta_destino):
-    archivo_temporal = "temp_upload.parquet"
-    df.to_parquet(archivo_temporal, engine='pyarrow', index=False)
-    cliente = storage.Client()
-    bucket = cliente.bucket(bucket_name)
-    blob = bucket.blob(ruta_destino)
-    blob.upload_from_filename(archivo_temporal)
-    os.remove(archivo_temporal)
-
-def calcular_griegas(df):
-    """Aplica Black-Scholes vectorizado a todo el DataFrame."""
-    # Evitar divisiones por cero en volatilidad o tiempo
+def calcular_total_gex(df_opciones, spot_price, risk_free_rate):
+    """Calcula el Gamma Exposure (GEX) total comprimiendo miles de contratos."""
+    df = df_opciones.copy()
     df['impliedVolatility'] = df['impliedVolatility'].replace(0, np.nan)
-    df = df.dropna(subset=['impliedVolatility']).copy()
+    df = df.dropna(subset=['impliedVolatility'])
     
-    # Variables base
-    S = df['spot_price']
+    if df.empty:
+        return 0.0
+
+    S = spot_price
     K = df['strike']
-    r = df['risk_free_rate']
+    r = risk_free_rate
     sigma = df['impliedVolatility']
     
-    # Tiempo a expiración en años (T). Si vence hoy, asignamos 1 día (1/365) para evitar T=0
-    df['dias_expiracion'] = (pd.to_datetime(df['fecha_expiracion']).dt.tz_localize(None) - pd.to_datetime(df['fecha_captura']).dt.tz_localize(None)).dt.days
-    df['T'] = np.where(df['dias_expiracion'] <= 0, 1.0 / 365.0, df['dias_expiracion'] / 365.0)
-    T = df['T']
+    # Manejo de fechas para el tiempo T en años
+    hoy = pd.to_datetime(df['fecha_captura'].iloc[0]).tz_localize(None)
+    fecha_exp = pd.to_datetime(df['fecha_expiracion']).dt.tz_localize(None)
+    dias = (fecha_exp - hoy).dt.days
+    T = np.where(dias <= 0, 1.0 / 365.0, dias / 365.0)
 
-    # Black-Scholes d1 y d2
+    # Fórmula Black-Scholes para Gamma
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-
-    # Densidad y distribución normal
-    N_d1 = norm.cdf(d1)
-    N_d2 = norm.cdf(d2)
-    N_neg_d1 = norm.cdf(-d1)
-    N_neg_d2 = norm.cdf(-d2)
     pdf_d1 = norm.pdf(d1)
+    Gamma = pdf_d1 / (S * sigma * np.sqrt(T))
 
-    # 1. GAMMA (Igual para Call y Put)
-    df['Gamma'] = pdf_d1 / (S * sigma * np.sqrt(T))
+    # Open Interest (rellenar nulos con 0)
+    OI = df['openInterest'].fillna(0)
 
-    # 2. VEGA (Igual para Call y Put, expresado en porcentaje)
-    df['Vega'] = (S * pdf_d1 * np.sqrt(T)) / 100
-
-    # Separar la lógica para Calls y Puts usando máscaras booleanas
+    # GEX del contrato = Gamma * Open Interest * 100 * Spot Price
+    gex_contrato = Gamma * OI * 100 * S
+    
     es_call = df['tipo'] == 'call'
     es_put = df['tipo'] == 'put'
 
-    # 3. DELTA
-    df.loc[es_call, 'Delta'] = N_d1[es_call]
-    df.loc[es_put, 'Delta'] = N_d1[es_put] - 1
-
-    # 4. THETA (Anualizado, lo dividimos entre 365 para ver la caída diaria)
-    theta_call = (- (S * pdf_d1 * sigma) / (2 * np.sqrt(T)) - r * K * np.exp(-r * T) * N_d2) / 365
-    theta_put = (- (S * pdf_d1 * sigma) / (2 * np.sqrt(T)) + r * K * np.exp(-r * T) * N_neg_d2) / 365
+    # GEX Total (Calls suman liquidez, Puts restan)
+    total_gex = gex_contrato[es_call].sum() - gex_contrato[es_put].sum()
     
-    df.loc[es_call, 'Theta'] = theta_call[es_call]
-    df.loc[es_put, 'Theta'] = theta_put[es_put]
-
-    return df
+    return total_gex
 
 def main():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Transformación Capa Plata (Griegas)")
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Transformación Capa Plata")
     configurar_autenticacion_local()
     config = cargar_configuracion()
     
     if not config:
+        print("[ERROR] No se pudo cargar config.json")
         return
 
     activos = list(config["activos_operativos"].keys())
     bucket_name = "datalake-quant-451704"
-    fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
-
-    # 1. Cargar el contexto Macro (Tasa libre de riesgo)
-    ruta_macro = f"macro/bronce/macro_{fecha_str}.parquet"
-    df_macro = descargar_parquet_gcs(bucket_name, ruta_macro, "temp_macro.parquet")
+    fecha_hoy = datetime.now(timezone.utc).strftime('%Y%m%d')
+    fecha_iso = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
+    # Variables globales para Data Warehouse
+    proyecto_bq = "resonant-forge-451704-v6"
+    dataset_bq = "sistema_quant"
+    tabla_bq = "plata_diaria"
+    tabla_destino = f"{proyecto_bq}.{dataset_bq}.{tabla_bq}"
+
+    # 1. Cargar datos generales (Macro, Sentimiento, Earnings)
+    df_macro = descargar_parquet_gcs(bucket_name, f"macro/bronce/macro_{fecha_hoy}.parquet", "temp_m.parquet")
+    df_sent = descargar_parquet_gcs(bucket_name, f"sentimiento/bronce/sentiment_{fecha_hoy}.parquet", "temp_s.parquet")
+    df_earn = descargar_parquet_gcs(bucket_name, f"earnings/bronce/earnings_{fecha_hoy}.parquet", "temp_e.parquet")
+
     if df_macro is None or df_macro.empty:
-        print("[ERROR] Faltan datos macro de hoy. No se pueden calcular las Griegas.")
+        print("[ERROR] Datos Macro no encontrados. Abortando Capa Plata.")
         return
-        
-    risk_free_rate = df_macro['ten_year_rate'].iloc[0]
-    print(f"[INFO] Tasa Libre de Riesgo (Bono 10Y): {risk_free_rate:.4f}")
 
-    # 2. Iterar sobre cada activo para procesar su Capa Plata
+    tasa_10y = float(df_macro['ten_year_rate'].iloc[0]) if 'ten_year_rate' in df_macro else 0.0
+    vix = float(df_macro['vix'].iloc[0]) if 'vix' in df_macro else 0.0
+    dxy = float(df_macro['dxy'].iloc[0]) if 'dxy' in df_macro else 0.0
+
+    filas_plata = []
+
+    # 2. Iterar por activo para armar la súper fila
+    print(f"[INFO] Ensamblando features diarios para {len(activos)} activos...\n")
     for ticker in activos:
-        print(f"----------------------------------------")
-        print(f"[INFO] Procesando Capa Plata para {ticker}...")
+        print(f" -> Procesando {ticker}...")
         
-        # Leer Bronce (Precios)
-        ruta_precio = f"precios/bronce/{ticker}_{fecha_str}.parquet"
-        df_precio = descargar_parquet_gcs(bucket_name, ruta_precio, f"temp_px_{ticker}.parquet")
-        
-        # Leer Bronce (Opciones)
-        ruta_opciones = f"opciones/bronce/{ticker}_{fecha_str}.parquet"
-        df_opciones = descargar_parquet_gcs(bucket_name, ruta_opciones, f"temp_opt_{ticker}.parquet")
-
-        if df_precio is None or df_opciones is None:
-            print(f"[WARN] Faltan datos base para {ticker}. Saltando...")
+        # Precios
+        df_px = descargar_parquet_gcs(bucket_name, f"precios/bronce/{ticker}_{fecha_hoy}.parquet", f"t_px_{ticker}.parquet")
+        if df_px is None or df_px.empty:
+            print(f"    [WARN] Sin datos de precio. Saltando activo.")
             continue
+            
+        apertura = float(df_px['apertura'].iloc[-1])
+        maximo = float(df_px['maximo'].iloc[-1])
+        minimo = float(df_px['minimo'].iloc[-1])
+        cierre = float(df_px['cierre'].iloc[-1])
+        volumen = int(df_px['volumen'].iloc[-1])
 
-        spot_price = df_precio['cierre'].iloc[-1]
-        
-        # Inyectar el Spot Price y la Tasa Macro a la tabla de opciones
-        df_opciones['spot_price'] = spot_price
-        df_opciones['risk_free_rate'] = risk_free_rate
-        
-        # Calcular la matemática pesada
-        df_plata = calcular_griegas(df_opciones)
-        
-        # Limpiar columnas innecesarias y estructurar la tabla final
-        columnas_finales = [
-            'fecha_captura', 'ticker', 'fecha_expiracion', 'tipo', 'strike', 
-            'spot_price', 'lastPrice', 'bid', 'ask', 'volume', 'openInterest', 
-            'impliedVolatility', 'dias_expiracion', 'Delta', 'Gamma', 'Theta', 'Vega'
-        ]
-        
-        # Manejo de columnas faltantes por si Yahoo no trajo volumen en contratos inactivos
-        for col in columnas_finales:
-            if col not in df_plata.columns:
-                df_plata[col] = 0
-                
-        df_plata = df_plata[columnas_finales]
-        
-        # Guardar en la Capa Plata
-        ruta_plata = f"opciones/plata/{ticker}_{fecha_str}.parquet"
-        subir_parquet_gcs(df_plata, bucket_name, ruta_plata)
-        print(f"[EXITO] Griegas calculadas y guardadas: gs://{bucket_name}/{ruta_plata}")
+        # Opciones y GEX
+        df_opc = descargar_parquet_gcs(bucket_name, f"opciones/bronce/{ticker}_{fecha_hoy}.parquet", f"t_op_{ticker}.parquet")
+        total_gex = 0.0
+        if df_opc is not None and not df_opc.empty:
+            total_gex = calcular_total_gex(df_opc, cierre, tasa_10y)
+
+        # Sentimiento
+        sent_score = 0.0
+        if df_sent is not None and not df_sent.empty:
+            filtro_s = df_sent[df_sent['ticker'] == ticker]
+            if not filtro_s.empty:
+                sent_score = float(filtro_s['sentiment_score'].iloc[0])
+
+        # Earnings
+        dias_earnings = None
+        if df_earn is not None and not df_earn.empty:
+            filtro_e = df_earn[df_earn['ticker'] == ticker]
+            if not filtro_e.empty and pd.notna(filtro_e['proximo_reporte'].iloc[0]):
+                fecha_rep = pd.to_datetime(filtro_e['proximo_reporte'].iloc[0]).tz_localize(None)
+                hoy = datetime.now().replace(tzinfo=None)
+                dias_earnings = int((fecha_rep - hoy).days)
+
+        # 3. Ensamblar fila
+        filas_plata.append({
+            "fecha": pd.to_datetime(fecha_iso).date(),
+            "ticker": ticker,
+            "apertura": apertura,
+            "maximo": maximo,
+            "minimo": minimo,
+            "cierre": cierre,
+            "volumen": volumen,
+            "total_gex": float(total_gex),
+            "tasa_10y": tasa_10y,
+            "vix": vix,
+            "dxy": dxy,
+            "sentimiento_score": sent_score,
+            "dias_para_earnings": dias_earnings
+        })
+
+    if not filas_plata:
+        print("[WARN] No se procesaron filas para BigQuery.")
+        return
+
+    # 4. Inserción en BigQuery (Data Warehouse)
+    df_final = pd.DataFrame(filas_plata)
+    # Convertimos los NaN en tipos de pandas compatibles con BQ nulos
+    df_final['dias_para_earnings'] = df_final['dias_para_earnings'].astype('Int64')
+
+    print(f"\n[INFO] Escribiendo {len(df_final)} filas en BigQuery ({tabla_destino})...")
+    cliente_bq = bigquery.Client()
+    
+    # Configurar el trabajo para que haga APPEND
+    job_config = bigquery.LoadJobConfig(
+        write_disposition="WRITE_APPEND",
+    )
+    
+    job = cliente_bq.load_table_from_dataframe(df_final, tabla_destino, job_config=job_config)
+    job.result() # Esperar a que termine
+    
+    print("[EXITO] Capa Plata materializada correctamente en BigQuery.")
 
 if __name__ == "__main__":
     main()
