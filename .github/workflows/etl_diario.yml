@@ -48,3 +48,16 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       run: python scripts/etl_macro.py
+
+    - name: 8. Ejecutar ETL Sentimiento (FinBERT)
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
+      run: python scripts/etl_sentiment.py
+
+    - name: 9. Ejecutar ETL Earnings (Calendario)
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: python scripts/etl_earnings.py
