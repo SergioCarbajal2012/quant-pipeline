@@ -1,9 +1,24 @@
 {
   "activos_operativos": {
-    "SPY": { "modelo": "models/xgboost_spy.pkl" },
-    "QQQ": { "modelo": "models/xgboost_qqq.pkl" },
-    "NVDA": { "modelo": "models/xgboost_nvda.pkl" },
-    "TSLA": { "modelo": "models/xgboost_tsla.pkl" },
-    "AAPL": { "modelo": "models/xgboost_aapl.pkl" }
+    "SPY": {},
+    "QQQ": {},
+    "IWM": {},
+    "AAPL": {},
+    "MSFT": {},
+    "NVDA": {},
+    "TSLA": {},
+    "AMZN": {},
+    "META": {},
+    "GOOGL": {},
+    "AMD": {},
+    "COIN": {},
+    "PLTR": {},
+    "TLT": {},
+    "XLF": {},
+    "JPM": {},
+    "GLD": {},
+    "XLE": {},
+    "WMT": {},
+    "XRT": {}
   }
 }
