@@ -4,7 +4,7 @@ on:
   schedule:
     # Ejecutar a las 12:00 UTC (6:00 AM CST) de Lunes a Viernes
     - cron: '0 12 * * 1-5'
-  workflow_dispatch: # Este comando nos permite poner un boton en GitHub para correrlo manualmente cuando queramos
+  workflow_dispatch:
 
 jobs:
   extraer_y_guardar_datalake:
@@ -47,20 +47,19 @@ jobs:
         FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       run: python scripts/etl_macro.py
 
-    - name: 8. Ejecutar ETL Sentimiento (FinBERT)
+    - name: 8. Ejecutar ETL Sentimiento (RSS + FinBERT)
       env:
-        HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
-      run: python scripts/etl_sentiment.py
+        # El script en Python busca "HF_TOKEN"
+        HF_TOKEN: ${{ secrets.HF_API_TOKEN }}
+      run: python scripts/extraccion_sentimiento.py
 
     - name: 9. Ejecutar ETL Earnings (Calendario)
-      run: python scripts/etl_earnings.py
+      run: python scripts/extraccion_earnings.py
     
-    - name: 9b. Ejecutar Transformacion Capa Plata (Griegas)
-      env:
-        GCP_SECRETO: ${{ secrets.GCP_CREDENTIALS }}
+    - name: 10. Ejecutar Transformacion Capa Plata (Total GEX y Feature Store)
       run: python scripts/transformacion_plata.py
 
-    - name: 10. Notificar Telegram
+    - name: 11. Notificar Telegram
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
