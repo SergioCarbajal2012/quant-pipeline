@@ -64,4 +64,4 @@ jobs:
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python scripts/notificar_pipeline.py --inicio "${{ env.PIPELINE_START }}"
+      run: python scripts/notificar_pipeline.py --inicio "${{ env.PIPELINE_START }}" --run_id "${{ github.run_id }}"

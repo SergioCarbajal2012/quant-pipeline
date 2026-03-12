@@ -25,7 +25,6 @@ def cargar_configuracion():
         return None
 
 def descargar_parquet_gcs(bucket_name, ruta_blob, archivo_temp):
-    """Descarga un archivo desde GCS y devuelve un DataFrame. Retorna None si no existe."""
     try:
         cliente = storage.Client()
         bucket = cliente.bucket(bucket_name)
@@ -41,7 +40,6 @@ def descargar_parquet_gcs(bucket_name, ruta_blob, archivo_temp):
         return None
 
 def calcular_total_gex(df_opciones, spot_price, risk_free_rate):
-    """Calcula el Gamma Exposure (GEX) total comprimiendo miles de contratos."""
     df = df_opciones.copy()
     df['impliedVolatility'] = df['impliedVolatility'].replace(0, np.nan)
     df = df.dropna(subset=['impliedVolatility'])
@@ -54,33 +52,26 @@ def calcular_total_gex(df_opciones, spot_price, risk_free_rate):
     r = risk_free_rate
     sigma = df['impliedVolatility']
     
-    # Manejo de fechas para el tiempo T en años
     hoy = pd.to_datetime(df['fecha_captura'].iloc[0]).tz_localize(None)
     fecha_exp = pd.to_datetime(df['fecha_expiracion']).dt.tz_localize(None)
     dias = (fecha_exp - hoy).dt.days
     T = np.where(dias <= 0, 1.0 / 365.0, dias / 365.0)
 
-    # Fórmula Black-Scholes para Gamma
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     pdf_d1 = norm.pdf(d1)
     Gamma = pdf_d1 / (S * sigma * np.sqrt(T))
 
-    # Open Interest (rellenar nulos con 0)
     OI = df['openInterest'].fillna(0)
-
-    # GEX del contrato = Gamma * Open Interest * 100 * Spot Price
     gex_contrato = Gamma * OI * 100 * S
     
     es_call = df['tipo'] == 'call'
     es_put = df['tipo'] == 'put'
 
-    # GEX Total (Calls suman liquidez, Puts restan)
     total_gex = gex_contrato[es_call].sum() - gex_contrato[es_put].sum()
-    
     return total_gex
 
 def main():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Transformación Capa Plata")
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Transformacion Capa Plata")
     configurar_autenticacion_local()
     config = cargar_configuracion()
     
@@ -93,13 +84,14 @@ def main():
     fecha_hoy = datetime.now(timezone.utc).strftime('%Y%m%d')
     fecha_iso = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
-    # Variables globales para Data Warehouse
+    # ID de Ejecucion de GitHub Actions
+    run_id = os.environ.get("GITHUB_RUN_ID", "local_run")
+    
     proyecto_bq = "resonant-forge-451704-v6"
     dataset_bq = "sistema_quant"
     tabla_bq = "plata_diaria"
     tabla_destino = f"{proyecto_bq}.{dataset_bq}.{tabla_bq}"
 
-    # 1. Cargar datos generales (Macro, Sentimiento, Earnings)
     df_macro = descargar_parquet_gcs(bucket_name, f"macro/bronce/macro_{fecha_hoy}.parquet", "temp_m.parquet")
     df_sent = descargar_parquet_gcs(bucket_name, f"sentimiento/bronce/sentiment_{fecha_hoy}.parquet", "temp_s.parquet")
     df_earn = descargar_parquet_gcs(bucket_name, f"earnings/bronce/earnings_{fecha_hoy}.parquet", "temp_e.parquet")
@@ -114,15 +106,9 @@ def main():
 
     filas_plata = []
 
-    # 2. Iterar por activo para armar la súper fila
-    print(f"[INFO] Ensamblando features diarios para {len(activos)} activos...\n")
     for ticker in activos:
-        print(f" -> Procesando {ticker}...")
-        
-        # Precios
         df_px = descargar_parquet_gcs(bucket_name, f"precios/bronce/{ticker}_{fecha_hoy}.parquet", f"t_px_{ticker}.parquet")
         if df_px is None or df_px.empty:
-            print(f"    [WARN] Sin datos de precio. Saltando activo.")
             continue
             
         apertura = float(df_px['apertura'].iloc[-1])
@@ -131,20 +117,15 @@ def main():
         cierre = float(df_px['cierre'].iloc[-1])
         volumen = int(df_px['volumen'].iloc[-1])
 
-        # Opciones y GEX
         df_opc = descargar_parquet_gcs(bucket_name, f"opciones/bronce/{ticker}_{fecha_hoy}.parquet", f"t_op_{ticker}.parquet")
-        total_gex = 0.0
-        if df_opc is not None and not df_opc.empty:
-            total_gex = calcular_total_gex(df_opc, cierre, tasa_10y)
+        total_gex = calcular_total_gex(df_opc, cierre, tasa_10y) if df_opc is not None and not df_opc.empty else 0.0
 
-        # Sentimiento
         sent_score = 0.0
         if df_sent is not None and not df_sent.empty:
             filtro_s = df_sent[df_sent['ticker'] == ticker]
             if not filtro_s.empty:
                 sent_score = float(filtro_s['sentiment_score'].iloc[0])
 
-        # Earnings
         dias_earnings = None
         if df_earn is not None and not df_earn.empty:
             filtro_e = df_earn[df_earn['ticker'] == ticker]
@@ -153,7 +134,6 @@ def main():
                 hoy = datetime.now().replace(tzinfo=None)
                 dias_earnings = int((fecha_rep - hoy).days)
 
-        # 3. Ensamblar fila
         filas_plata.append({
             "fecha": pd.to_datetime(fecha_iso).date(),
             "ticker": ticker,
@@ -167,30 +147,28 @@ def main():
             "vix": vix,
             "dxy": dxy,
             "sentimiento_score": sent_score,
-            "dias_para_earnings": dias_earnings
+            "dias_para_earnings": dias_earnings,
+            "ejecucion_id": str(run_id)
         })
 
     if not filas_plata:
-        print("[WARN] No se procesaron filas para BigQuery.")
         return
 
-    # 4. Inserción en BigQuery (Data Warehouse)
     df_final = pd.DataFrame(filas_plata)
-    # Convertimos los NaN en tipos de pandas compatibles con BQ nulos
     df_final['dias_para_earnings'] = df_final['dias_para_earnings'].astype('Int64')
 
-    print(f"\n[INFO] Escribiendo {len(df_final)} filas en BigQuery ({tabla_destino})...")
     cliente_bq = bigquery.Client()
     
-    # Configurar el trabajo para que haga APPEND
-    job_config = bigquery.LoadJobConfig(
-        write_disposition="WRITE_APPEND",
-    )
+    # IDEMPOTENCIA: Borramos los datos de hoy antes de insertar
+    print(f"\n[INFO] Limpiando datos previos de {fecha_iso} (Idempotencia)...")
+    query_limpieza = f"DELETE FROM `{tabla_destino}` WHERE fecha = '{fecha_iso}'"
+    cliente_bq.query(query_limpieza).result()
+
+    print(f"[INFO] Escribiendo {len(df_final)} filas con ID de ejecucion: {run_id}")
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+    cliente_bq.load_table_from_dataframe(df_final, tabla_destino, job_config=job_config).result()
     
-    job = cliente_bq.load_table_from_dataframe(df_final, tabla_destino, job_config=job_config)
-    job.result() # Esperar a que termine
-    
-    print("[EXITO] Capa Plata materializada correctamente en BigQuery.")
+    print("[EXITO] Capa Plata materializada correctamente.")
 
 if __name__ == "__main__":
     main()
