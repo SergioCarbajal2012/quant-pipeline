@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from google.cloud import storage
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
-# ¡LA MAGIA ESTÁ AQUÍ! Nueva URL del enrutador de Hugging Face
 API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
 
 def configurar_autenticacion_local():
@@ -40,9 +39,7 @@ def obtener_noticias_rss(ticker):
 
 def analizar_sentimiento(textos):
     if not HF_TOKEN:
-        print("    [ERROR] No se encontro HF_TOKEN en las variables de entorno.")
         return None
-        
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
     for intento in range(3):
         try:
@@ -50,89 +47,72 @@ def analizar_sentimiento(textos):
             if response.status_code == 200:
                 return response.json()
             elif 'estimated_time' in response.text:
-                espera = response.json().get('estimated_time', 20)
-                print(f"    [INFO] FinBERT despertando. Esperando {espera:.1f}s...")
-                time.sleep(espera)
+                time.sleep(response.json().get('estimated_time', 20))
             else:
-                print(f"    [ERROR API] Intento {intento+1}. Codigo: {response.status_code}. Detalle: {response.text}")
                 time.sleep(5)
-        except Exception as e:
-            print(f"    [ERROR RED] Excepcion en intento {intento+1}: {e}")
+        except:
             time.sleep(5)
     return None
 
 def main():
-    print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Extraccion Sentimiento (RSS + Relevancia)")
+    print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Sentimiento Pro (Intensidad + Contexto)")
     configurar_autenticacion_local()
     config = cargar_configuracion()
     activos = list(config["activos_operativos"].keys())
     
     resultados = []
-    
     for ticker in activos:
-        print(f"Procesando noticias para {ticker}...")
-        titulares = obtener_noticias_rss(ticker)
+        print(f"Analizando {ticker}...")
+        titulares_originales = obtener_noticias_rss(ticker)
         
-        if not titulares:
-            print(f"    [WARN] Cero noticias encontradas para {ticker}.")
+        if not titulares_originales:
             resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
             continue
+
+        # --- AQUI ESTA EL PROMPT (CONTEXTO) ---
+        # Prependemos el ticker a cada titular para que la IA sepa de quién hablamos
+        titulares_con_contexto = [f"Regarding {ticker}: {t}" for t in titulares_originales]
             
-        analisis = analizar_sentimiento(titulares)
+        analisis = analizar_sentimiento(titulares_con_contexto)
         score_acumulado = 0.0
         
         if analisis:
             for i, res in enumerate(analisis):
-                # Extraemos la etiqueta de mayor confianza
-                if isinstance(res, list):
-                    mejor_etiqueta = max(res, key=lambda x: x['score'])
-                else:
-                    mejor_etiqueta = res
-                    
-                label = mejor_etiqueta['label']
-                score = mejor_etiqueta['score']
+                mejor_etiqueta = max(res, key=lambda x: x['score']) if isinstance(res, list) else res
+                label, score = mejor_etiqueta['label'], mejor_etiqueta['score']
                 
-                # Multiplicador de relevancia
-                titular_upper = titulares[i].upper()
-                if ticker in titular_upper:
-                    relevancia = 1.5
-                else:
-                    relevancia = 0.5
+                # Relevancia personalizada
+                relevancia = 1.5 if ticker in titulares_originales[i].upper() else 0.5
                 
                 if label == 'positive':
-                    valor_final = score * relevancia
+                    score_acumulado += (score * relevancia)
                 elif label == 'negative':
-                    valor_final = -score * relevancia
-                else:
-                    valor_final = 0.0
-                    
-                score_acumulado += valor_final
-                
-        score_diario = score_acumulado / len(titulares) if titulares else 0.0
-        print(f"    -> Score Ajustado: {score_diario:.4f} (en {len(titulares)} titulares)")
+                    score_acumulado -= (score * relevancia)
+        
+        # Escala de Intensidad (x100) para evitar dilución
+        intensidad_final = round(score_acumulado * 100, 2)
+        print(f"    -> Intensidad: {intensidad_final}")
         
         resultados.append({
-            "ticker": ticker,
-            "sentiment_score": round(score_diario, 4),
-            "total_noticias": len(titulares)
+            "ticker": ticker, 
+            "sentiment_score": intensidad_final, 
+            "total_noticias": len(titulares_originales)
         })
 
+    # Guardar en GCS
     df = pd.DataFrame(resultados)
     df['fecha_captura'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
-    
     bucket_name = "datalake-quant-451704"
     fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
     ruta_gcs = f"sentimiento/bronce/sentiment_{fecha_str}.parquet"
     
     archivo_temporal = "temp_sentiment.parquet"
     df.to_parquet(archivo_temporal, index=False)
-    
     cliente = storage.Client()
-    bucket = cliente.bucket(bucket_name)
-    blob = bucket.blob(ruta_gcs)
+    blob = cliente.bucket(bucket_name).blob(ruta_gcs)
     blob.upload_from_filename(archivo_temporal)
     os.remove(archivo_temporal)
-    print(f"[EXITO] Sentimiento guardado en gs://{bucket_name}/{ruta_gcs}")
+    print(f"[EXITO] Sentimiento Pro guardado.")
 
 if __name__ == "__main__":
     main()
