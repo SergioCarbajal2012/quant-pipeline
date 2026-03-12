@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from google.cloud import storage
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
-API_URL = "https://api-inference.huggingface.co/models/ProsusAI/finbert"
+# ¡LA MAGIA ESTÁ AQUÍ! Nueva URL del enrutador de Hugging Face
+API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
 
 def configurar_autenticacion_local():
     ruta_script = os.path.abspath(__file__)
@@ -82,7 +83,7 @@ def main():
         
         if analisis:
             for i, res in enumerate(analisis):
-                # Extraemos la etiqueta de mayor confianza (manejo de listas anidadas de HF)
+                # Extraemos la etiqueta de mayor confianza
                 if isinstance(res, list):
                     mejor_etiqueta = max(res, key=lambda x: x['score'])
                 else:
