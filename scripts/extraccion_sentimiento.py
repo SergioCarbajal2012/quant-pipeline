@@ -39,7 +39,7 @@ def obtener_noticias_rss(ticker):
 
 def analizar_sentimiento(textos):
     if not HF_TOKEN:
-        print("[ERROR] No se encontro HF_TOKEN")
+        print("    [ERROR] No se encontro HF_TOKEN en las variables de entorno.")
         return None
         
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
@@ -53,8 +53,10 @@ def analizar_sentimiento(textos):
                 print(f"    [INFO] FinBERT despertando. Esperando {espera:.1f}s...")
                 time.sleep(espera)
             else:
+                print(f"    [ERROR API] Intento {intento+1}. Codigo: {response.status_code}. Detalle: {response.text}")
                 time.sleep(5)
-        except Exception:
+        except Exception as e:
+            print(f"    [ERROR RED] Excepcion en intento {intento+1}: {e}")
             time.sleep(5)
     return None
 

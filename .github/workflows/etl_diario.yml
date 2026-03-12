@@ -12,6 +12,7 @@ jobs:
 
     env:
       PIPELINE_START: ${{ github.event.repository.updated_at }}
+      PYTHONUNBUFFERED: 1
 
     steps:
     - name: 1. Descargar el codigo del repositorio
