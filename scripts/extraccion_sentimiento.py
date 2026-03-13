@@ -72,64 +72,78 @@ def main():
     print(f"[{datetime.now(timezone.utc).isoformat()}] Iniciando Sentimiento Pro (Filtro 24h + Intensidad)")
     configurar_autenticacion_local()
     
-    # Cargar configuración (asumimos que existe config.json en la raíz)
+    # Cargar configuracion
     ruta_base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     with open(os.path.join(ruta_base, 'config.json'), 'r') as f:
         config = json.load(f)
     
     activos = list(config["activos_operativos"].keys())
     resultados = []
-
+    activos_fallidos = []
+    
     for ticker in activos:
         print(f"Procesando {ticker}...")
-        time.sleep(1)
+        
+        # Respiro de 1s para evitar Rate Limit en Hugging Face
+        time.sleep(1) 
+        
         titulares_frescos = obtener_noticias_frescas_rss(ticker)
         
         if not titulares_frescos:
-            print(f"    -> [INFO] 0 noticias en las últimas 24h.")
             resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
             continue
 
-        # Contextualización (Prompt)
-        titulares_con_contexto = [f"Regarding {ticker}: {t}" for t in titulares_frescos]
+        # Inferencia con FinBERT
+        analisis = analizar_sentimiento([f"Regarding {ticker}: {t}" for t in titulares_frescos])
         
-        analisis = analizar_sentimiento(titulares_con_contexto)
+        if analisis is None:
+            print(f"    [ERROR] Fallo de API en {ticker}")
+            activos_fallidos.append(ticker)
+            resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
+            continue
+
         score_acumulado = 0.0
-        
-        if analisis:
-            for i, res in enumerate(analisis):
-                mejor_etiqueta = max(res, key=lambda x: x['score']) if isinstance(res, list) else res
-                label, score = mejor_etiqueta['label'], mejor_etiqueta['score']
-                
-                # Relevancia (usa el titular original sin el prefijo para la búsqueda)
-                relevancia = 1.5 if ticker in titulares_frescos[i].upper() else 0.5
-                
-                if label == 'positive':
-                    score_acumulado += (score * relevancia)
-                elif label == 'negative':
-                    score_acumulado -= (score * relevancia)
+        for i, res in enumerate(analisis):
+            mejor_etiqueta = max(res, key=lambda x: x['score']) if isinstance(res, list) else res
+            label, score = mejor_etiqueta['label'], mejor_etiqueta['score']
+            
+            relevancia = 1.5 if ticker.upper() in titulares_frescos[i].upper() else 0.5
+            
+            if label == 'positive':
+                score_acumulado += (score * relevancia)
+            elif label == 'negative':
+                score_acumulado -= (score * relevancia)
         
         intensidad_final = round(score_acumulado * 100, 2)
-        print(f"    -> Intensidad (24h): {intensidad_final} ({len(titulares_frescos)} noticias)")
-        
         resultados.append({
             "ticker": ticker, 
             "sentiment_score": intensidad_final, 
             "total_noticias": len(titulares_frescos)
         })
 
-    # Guardado en GCS (Parquet)
+    # Guardado en Google Cloud Storage
     df = pd.DataFrame(resultados)
-    df['fecha_captura'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    df['fecha'] = datetime.now(timezone.utc).date()
+    
     bucket_name = "datalake-quant-451704"
     fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
     ruta_gcs = f"sentimiento/bronce/sentiment_{fecha_str}.parquet"
     
     archivo_temporal = "temp_sentiment.parquet"
     df.to_parquet(archivo_temporal, index=False)
-    storage.Client().bucket(bucket_name).blob(ruta_gcs).upload_from_filename(archivo_temporal)
+    
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(ruta_gcs)
+    blob.upload_from_filename(archivo_temporal)
     os.remove(archivo_temporal)
-    print(f"[EXITO] Sentimiento filtrado guardado.")
+
+    # Exportar lista de fallos para el Notificador si existen
+    if activos_fallidos:
+        with open("alertas_api.txt", "w") as f:
+            f.write(", ".join(activos_fallidos))
+            
+    print(f"[EXITO] Proceso de sentimiento completado.")
 
 if __name__ == "__main__":
     main()

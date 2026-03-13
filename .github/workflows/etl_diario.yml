@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PIPELINE_START: ${{ github.event.repository.updated_at }}
       PYTHONUNBUFFERED: 1
 
     steps:
@@ -50,9 +49,14 @@ jobs:
 
     - name: 8. Ejecutar ETL Sentimiento (RSS + FinBERT)
       env:
-        # El script en Python busca "HF_TOKEN"
         HF_TOKEN: ${{ secrets.HF_API_TOKEN }}
-      run: python scripts/extraccion_sentimiento.py
+      run: |
+        python scripts/extraccion_sentimiento.py
+        if [ -f alertas_api.txt ]; then
+          echo "API_ERRORS=$(cat alertas_api.txt)" >> $GITHUB_ENV
+        else
+          echo "API_ERRORS=" >> $GITHUB_ENV
+        fi
 
     - name: 9. Ejecutar ETL Earnings (Calendario)
       run: python scripts/extraccion_earnings.py
@@ -61,7 +65,12 @@ jobs:
       run: python scripts/transformacion_plata.py
 
     - name: 11. Notificar Telegram
+      if: always()
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: python scripts/notificar_pipeline.py --inicio "${{ env.PIPELINE_START }}" --run_id "${{ github.run_id }}"
+      run: |
+        python scripts/notificar_pipeline.py \
+          --inicio "${{ env.PIPELINE_START }}" \
+          --run_id "${{ github.run_id }}" \
+          --errores "${{ env.API_ERRORS }}"
