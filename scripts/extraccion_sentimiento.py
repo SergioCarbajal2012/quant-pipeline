@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 import email.utils # Vital para parsear las fechas del RSS
 from datetime import datetime, timezone
 from google.cloud import storage
+import time
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
@@ -81,6 +82,7 @@ def main():
 
     for ticker in activos:
         print(f"Procesando {ticker}...")
+        time.sleep(1)
         titulares_frescos = obtener_noticias_frescas_rss(ticker)
         
         if not titulares_frescos:

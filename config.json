@@ -1,26 +1,14 @@
 {
   "activos_operativos": {
-    "SPY": {},
-    "QQQ": {},
-    "IWM": {},
-    "AAPL": {},
-    "MSFT": {},
-    "NVDA": {},
-    "TSLA": {},
-    "AMZN": {},
-    "META": {},
-    "GOOGL": {},
-    "AMD": {},
-    "COIN": {},
-    "PLTR": {},
-    "TLT": {},
-    "XLF": {},
-    "JPM": {},
-    "GLD": {},
-    "XLE": {},
-    "WMT": {},
-    "XRT": {},
-    "CVX": {},
-    "CEG": {}
+    "SPY": {}, "QQQ": {}, "IWM": {}, "TLT": {}, "GLD": {},
+    "AAPL": {}, "MSFT": {}, "GOOGL": {}, "AMZN": {}, "META": {}, 
+    "TSLA": {}, "NVDA": {}, "CRM": {}, "SNOW": {}, "SHOP": {}, 
+    "U": {}, "AMD": {}, "AVGO": {}, "MU": {}, "TSM": {}, 
+    "ARM": {}, "ASML": {}, "XLF": {}, "JPM": {}, "GS": {}, 
+    "BAC": {}, "V": {}, "MA": {}, "PYPL": {}, "XLE": {}, 
+    "CVX": {}, "XOM": {}, "SLB": {}, "CEG": {}, "VST": {},
+    "COIN": {}, "PLTR": {}, "MSTR": {}, "HOOD": {}, "RIVN": {},
+    "XRT": {}, "WMT": {}, "COST": {}, "TGT": {}, "NKE": {}, 
+    "DIS": {}, "LLY": {}, "UNH": {}, "PFE": {}, "LMT": {}
   }
 }

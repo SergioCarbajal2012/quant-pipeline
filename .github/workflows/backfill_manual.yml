@@ -1,0 +1,23 @@
+name: Backfill Historico Manual
+on:
+  workflow_dispatch: # Botón de ejecución manual
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install Dependencies
+        run: pip install pandas yfinance pyarrow google-cloud-bigquery google-cloud-storage
+      - name: Run Backfill
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > gcp_key.json
+          export GOOGLE_APPLICATION_CREDENTIALS=gcp_key.json
+          python scripts/backfill_historico.py
+          rm gcp_key.json
