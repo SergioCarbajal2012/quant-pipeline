@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import pandas as pd
+import yfinance as yf
 from scipy.stats import norm
 from datetime import datetime, timezone
 from google.cloud import storage
@@ -38,6 +39,17 @@ def descargar_parquet_gcs(bucket_name, ruta_blob, archivo_temp):
     except Exception as e:
         print(f"[ERROR] Fallo al descargar {ruta_blob}: {e}")
         return None
+
+def obtener_fecha_logica_mercado():
+    """Obtiene la ultima sesion de mercado usando SPY como ancla."""
+    try:
+        df_calendario = yf.Ticker("SPY").history(period="10d")
+        if not df_calendario.empty:
+            return pd.to_datetime(df_calendario.index).max().date()
+    except Exception as e:
+        print(f"[WARN] No se pudo resolver fecha logica via SPY: {e}")
+
+    return (pd.Timestamp.utcnow() - pd.tseries.offsets.BDay(1)).date()
 
 def calcular_total_gex(df_opciones, spot_price, risk_free_rate):
     df = df_opciones.copy()
@@ -81,28 +93,10 @@ def main():
 
     activos = list(config["activos_operativos"].keys())
     bucket_name = "datalake-quant-451704"
-    
-    # --- LOGICA DE TIEMPO: LECTURA DE ARCHIVOS BRONCE ---
-    # Los scripts Bronce guardan los archivos usando UTC, asi que leemos usando UTC
-    fecha_hoy_utc = datetime.now(timezone.utc).strftime('%Y%m%d')
-    
-    # --- LOGICA DE TIEMPO: INSERCION EN BIGQUERY (Regla de las 10 AM CDMX) ---
-    import pytz
-    from datetime import timedelta
-    
-    tz_cdmx = pytz.timezone('America/Mexico_City')
-    ahora_cdmx = datetime.now(tz_cdmx)
-    
-    # Si son antes de las 10:00 AM CDMX, asignamos la fecha de hoy.
-    # Si son las 10:00 AM o mas tarde, lo mandamos al dia de manana (modo prueba/intradia).
-    if ahora_cdmx.hour < 10:
-        fecha_bd = ahora_cdmx.date()
-        print(f"[INFO] Ejecucion matutina ({ahora_cdmx.strftime('%H:%M')} CDMX). Asignando fecha oficial: {fecha_bd}")
-    else:
-        fecha_bd = (ahora_cdmx + timedelta(days=1)).date()
-        print(f"[INFO] Ejecucion vespertina ({ahora_cdmx.strftime('%H:%M')} CDMX). Asignando fecha de manana para proteger hoy: {fecha_bd}")
-        
-    fecha_iso = fecha_bd.strftime('%Y-%m-%d')
+
+    fecha_logica = obtener_fecha_logica_mercado()
+    fecha_str = fecha_logica.strftime('%Y%m%d')
+    fecha_iso = fecha_logica.strftime('%Y-%m-%d')
     
     # ID de Ejecucion de GitHub Actions
     run_id = os.environ.get("GITHUB_RUN_ID", "local_run")
@@ -112,10 +106,9 @@ def main():
     tabla_bq = "plata_diaria"
     tabla_destino = f"{proyecto_bq}.{dataset_bq}.{tabla_bq}"
 
-    # Al leer los parquets, usamos la variable UTC para que coincida con lo que Bronce acaba de guardar
-    df_macro = descargar_parquet_gcs(bucket_name, f"macro/bronce/macro_{fecha_hoy_utc}.parquet", "temp_m.parquet")
-    df_sent = descargar_parquet_gcs(bucket_name, f"sentimiento/bronce/sentiment_{fecha_hoy_utc}.parquet", "temp_s.parquet")
-    df_earn = descargar_parquet_gcs(bucket_name, f"earnings/bronce/earnings_{fecha_hoy_utc}.parquet", "temp_e.parquet")
+    df_macro = descargar_parquet_gcs(bucket_name, f"macro/bronce/macro_{fecha_str}.parquet", "temp_m.parquet")
+    df_sent = descargar_parquet_gcs(bucket_name, f"sentimiento/bronce/sentiment_{fecha_str}.parquet", "temp_s.parquet")
+    df_earn = descargar_parquet_gcs(bucket_name, f"earnings/bronce/earnings_{fecha_str}.parquet", "temp_e.parquet")
 
     if df_macro is None or df_macro.empty:
         print("[ERROR] Datos Macro no encontrados. Abortando Capa Plata.")
@@ -128,8 +121,7 @@ def main():
     filas_plata = []
 
     for ticker in activos:
-        # Nota el uso de fecha_hoy_utc aqui
-        df_px = descargar_parquet_gcs(bucket_name, f"precios/bronce/{ticker}_{fecha_hoy_utc}.parquet", f"t_px_{ticker}.parquet")
+        df_px = descargar_parquet_gcs(bucket_name, f"precios/bronce/{ticker}_{fecha_str}.parquet", f"t_px_{ticker}.parquet")
         if df_px is None or df_px.empty:
             continue
             
@@ -139,7 +131,7 @@ def main():
         cierre = float(df_px['cierre'].iloc[-1])
         volumen = int(df_px['volumen'].iloc[-1])
 
-        df_opc = descargar_parquet_gcs(bucket_name, f"opciones/bronce/{ticker}_{fecha_hoy_utc}.parquet", f"t_op_{ticker}.parquet")
+        df_opc = descargar_parquet_gcs(bucket_name, f"opciones/bronce/{ticker}_{fecha_str}.parquet", f"t_op_{ticker}.parquet")
         total_gex = calcular_total_gex(df_opc, cierre, tasa_10y) if df_opc is not None and not df_opc.empty else 0.0
 
         sent_score = 0.0
@@ -153,10 +145,9 @@ def main():
             filtro_e = df_earn[df_earn['ticker'] == ticker]
             if not filtro_e.empty and pd.notna(filtro_e['proximo_reporte'].iloc[0]):
                 fecha_rep = pd.to_datetime(filtro_e['proximo_reporte'].iloc[0]).tz_localize(None)
-                hoy = datetime.now().replace(tzinfo=None)
+                hoy = pd.to_datetime(fecha_iso)
                 dias_earnings = int((fecha_rep - hoy).days)
 
-        # Nota el uso de fecha_iso aqui (La regla de las 10 AM)
         filas_plata.append({
             "fecha": pd.to_datetime(fecha_iso).date(),
             "ticker": ticker,
