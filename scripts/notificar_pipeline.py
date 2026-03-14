@@ -36,5 +36,8 @@ def main():
         payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "Markdown"}
         requests.post(url, json=payload, timeout=10).raise_for_status()
 
+    except Exception as e:
+        print(f"[ERROR] Fallo al enviar notificación: {e}")
+
 if __name__ == "__main__":
     main()
