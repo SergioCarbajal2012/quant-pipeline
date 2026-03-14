@@ -3,12 +3,12 @@ import json
 import time
 import requests
 import pandas as pd
+import yfinance as yf
 import urllib.request
 import xml.etree.ElementTree as ET
 import email.utils # Vital para parsear las fechas del RSS
 from datetime import datetime, timezone
 from google.cloud import storage
-import time
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
@@ -93,45 +93,47 @@ def main():
     activos_fallidos = []
     fecha_logica_mercado = obtener_fecha_logica_mercado()
     
-    for ticker in activos:
+    for i, ticker in enumerate(activos):
         print(f"Procesando {ticker}...")
-        
-        # Respiro de 1s para evitar Rate Limit en Hugging Face
-        time.sleep(1) 
-        
-        titulares_frescos = obtener_noticias_frescas_rss(ticker)
-        
-        if not titulares_frescos:
-            resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
-            continue
+        try:
+            titulares_frescos = obtener_noticias_frescas_rss(ticker)
 
-        # Inferencia con FinBERT
-        analisis = analizar_sentimiento([f"Regarding {ticker}: {t}" for t in titulares_frescos])
-        
-        if analisis is None:
-            print(f"    [ERROR] Fallo de API en {ticker}")
-            activos_fallidos.append(ticker)
-            resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
-            continue
+            if not titulares_frescos:
+                resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
+                continue
 
-        score_acumulado = 0.0
-        for i, res in enumerate(analisis):
-            mejor_etiqueta = max(res, key=lambda x: x['score']) if isinstance(res, list) else res
-            label, score = mejor_etiqueta['label'], mejor_etiqueta['score']
-            
-            relevancia = 1.5 if ticker.upper() in titulares_frescos[i].upper() else 0.5
-            
-            if label == 'positive':
-                score_acumulado += (score * relevancia)
-            elif label == 'negative':
-                score_acumulado -= (score * relevancia)
-        
-        intensidad_final = round(score_acumulado * 100, 2)
-        resultados.append({
-            "ticker": ticker, 
-            "sentiment_score": intensidad_final, 
-            "total_noticias": len(titulares_frescos)
-        })
+            # Inferencia con FinBERT
+            analisis = analizar_sentimiento([f"Regarding {ticker}: {t}" for t in titulares_frescos])
+
+            if analisis is None:
+                print(f"    [ERROR] Fallo de API en {ticker}")
+                activos_fallidos.append(ticker)
+                resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
+                continue
+
+            score_acumulado = 0.0
+            for j, res in enumerate(analisis):
+                mejor_etiqueta = max(res, key=lambda x: x['score']) if isinstance(res, list) else res
+                label, score = mejor_etiqueta['label'], mejor_etiqueta['score']
+
+                relevancia = 1.5 if ticker.upper() in titulares_frescos[j].upper() else 0.5
+
+                if label == 'positive':
+                    score_acumulado += (score * relevancia)
+                elif label == 'negative':
+                    score_acumulado -= (score * relevancia)
+
+            intensidad_final = round(score_acumulado * 100, 2)
+            resultados.append({
+                "ticker": ticker,
+                "sentiment_score": intensidad_final,
+                "total_noticias": len(titulares_frescos)
+            })
+        finally:
+            if (i + 1) % 5 == 0:
+                time.sleep(3)
+            else:
+                time.sleep(0.5)
 
     # Guardado en Google Cloud Storage
     df = pd.DataFrame(resultados)
