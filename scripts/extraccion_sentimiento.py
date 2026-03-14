@@ -13,6 +13,17 @@ import time
 HF_TOKEN = os.environ.get("HF_TOKEN")
 API_URL = "https://router.huggingface.co/hf-inference/models/ProsusAI/finbert"
 
+def obtener_fecha_logica_mercado():
+    """Obtiene la ultima sesion de mercado usando SPY como ancla."""
+    try:
+        df_calendario = yf.Ticker("SPY").history(period="10d")
+        if not df_calendario.empty:
+            return pd.to_datetime(df_calendario.index).max().date()
+    except Exception as e:
+        print(f"[WARN] No se pudo resolver fecha logica via SPY: {e}")
+
+    return (pd.Timestamp.utcnow() - pd.tseries.offsets.BDay(1)).date()
+
 def configurar_autenticacion_local():
     # ... (mantiene la misma lógica de credenciales)
     ruta_script = os.path.abspath(__file__)
@@ -80,6 +91,7 @@ def main():
     activos = list(config["activos_operativos"].keys())
     resultados = []
     activos_fallidos = []
+    fecha_logica_mercado = obtener_fecha_logica_mercado()
     
     for ticker in activos:
         print(f"Procesando {ticker}...")
@@ -123,10 +135,10 @@ def main():
 
     # Guardado en Google Cloud Storage
     df = pd.DataFrame(resultados)
-    df['fecha'] = datetime.now(timezone.utc).date()
+    df['fecha'] = fecha_logica_mercado
     
     bucket_name = "datalake-quant-451704"
-    fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
+    fecha_str = fecha_logica_mercado.strftime('%Y%m%d')
     ruta_gcs = f"sentimiento/bronce/sentiment_{fecha_str}.parquet"
     
     archivo_temporal = "temp_sentiment.parquet"

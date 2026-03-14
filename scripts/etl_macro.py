@@ -19,32 +19,34 @@ def extraer_serie_fred(api_key, series_id):
     try:
         response = requests.get(url)
         data = response.json()
-        # Tomamos el valor y lo convertimos a float
-        value = data['observations'][0]['value']
+        observacion = data['observations'][0]
+        value = observacion['value']
+        fecha_obs = pd.to_datetime(observacion['date']).date()
         # La FRED a veces devuelve '.' si el dato no esta disponible aun
-        return float(value) if value != '.' else None
+        return (float(value) if value != '.' else None), fecha_obs
     except Exception as e:
         print(f"[ERROR] Fallo al extraer {series_id} de FRED: {e}")
-        return None
+        return None, None
 
 def extraer_yahoo_macro():
     """Extrae VIX y DXY usando Yahoo Finance."""
     tickers = {"vix": "^VIX", "dxy": "DX-Y.NYB"}
     resultados = {}
+    fechas = []
     for nombre, ticker in tickers.items():
         try:
-            data = yf.Ticker(ticker).history(period="1d")
+            data = yf.Ticker(ticker).history(period="10d")
             if not data.empty:
                 resultados[nombre] = data['Close'].iloc[-1]
+                fechas.append(pd.to_datetime(data.index).max().date())
         except:
             resultados[nombre] = None
-    return resultados
+    return resultados, fechas
 
 def main():
     configurar_autenticacion_local()
     fred_key = os.environ.get("FRED_API_KEY")
     bucket_name = "datalake-quant-451704"
-    fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
 
     if not fred_key:
         print("[ERROR] No se encontro FRED_API_KEY en las variables de entorno.")
@@ -59,20 +61,26 @@ def main():
         "expectativa_inflacion": "T10YIE"
     }
 
-    datos_finales = {
-        "fecha": datetime.now(timezone.utc).strftime('%Y-%m-%d')
-    }
+    datos_finales = {}
+    fechas_observadas = []
 
     # 1. Extraer datos de FRED
     for nombre_col, series_id in series_fred.items():
         print(f"[INFO] Extrayendo {series_id}...")
-        valor = extraer_serie_fred(fred_key, series_id)
+        valor, fecha_obs = extraer_serie_fred(fred_key, series_id)
         datos_finales[nombre_col] = valor
+        if fecha_obs is not None:
+            fechas_observadas.append(fecha_obs)
 
     # 2. Extraer datos de Yahoo Finance
     print("[INFO] Extrayendo VIX y DXY...")
-    yahoo_data = extraer_yahoo_macro()
+    yahoo_data, yahoo_fechas = extraer_yahoo_macro()
     datos_finales.update(yahoo_data)
+    fechas_observadas.extend(yahoo_fechas)
+
+    fecha_logica_mercado = max(fechas_observadas) if fechas_observadas else (pd.Timestamp.utcnow() - pd.tseries.offsets.BDay(1)).date()
+    datos_finales["fecha"] = fecha_logica_mercado.strftime('%Y-%m-%d')
+    fecha_str = fecha_logica_mercado.strftime('%Y%m%d')
 
     # 3. Guardar en Parquet y subir a GCS
     df_macro = pd.DataFrame([datos_finales])

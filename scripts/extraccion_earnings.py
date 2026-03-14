@@ -5,6 +5,17 @@ import yfinance as yf
 from datetime import datetime, timezone
 from google.cloud import storage
 
+def obtener_fecha_logica_mercado():
+    """Obtiene la ultima sesion de mercado usando SPY como ancla."""
+    try:
+        df_calendario = yf.Ticker("SPY").history(period="10d")
+        if not df_calendario.empty:
+            return pd.to_datetime(df_calendario.index).max().date()
+    except Exception as e:
+        print(f"[WARN] No se pudo resolver fecha logica via SPY: {e}")
+
+    return (pd.Timestamp.utcnow() - pd.tseries.offsets.BDay(1)).date()
+
 def configurar_autenticacion_local():
     ruta_script = os.path.abspath(__file__)
     ruta_base = os.path.dirname(os.path.dirname(ruta_script))
@@ -47,6 +58,7 @@ def main():
 
     activos = list(config["activos_operativos"].keys())
     resultados = []
+    fecha_logica_mercado = obtener_fecha_logica_mercado()
 
     for ticker in activos:
         print(f"Obteniendo fecha de reporte para {ticker}...")
@@ -63,10 +75,10 @@ def main():
             print(f"    -> N/A (Fondo o no disponible)")
 
     df = pd.DataFrame(resultados)
-    df['fecha_captura'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+    df['fecha_captura'] = fecha_logica_mercado.strftime('%Y-%m-%d')
     
     bucket_name = "datalake-quant-451704"
-    fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
+    fecha_str = fecha_logica_mercado.strftime('%Y%m%d')
     ruta_gcs = f"earnings/bronce/earnings_{fecha_str}.parquet"
     
     archivo_temporal = "temp_earnings.parquet"

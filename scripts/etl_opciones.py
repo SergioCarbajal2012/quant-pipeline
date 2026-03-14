@@ -5,6 +5,17 @@ import pandas as pd
 from datetime import datetime, timezone
 from google.cloud import storage
 
+def obtener_fecha_logica_mercado():
+    """Obtiene la ultima sesion de mercado usando SPY como ancla."""
+    try:
+        df_calendario = yf.Ticker("SPY").history(period="10d")
+        if not df_calendario.empty:
+            return pd.to_datetime(df_calendario.index).max().date()
+    except Exception as e:
+        print(f"[WARN] No se pudo resolver fecha logica via SPY: {e}")
+
+    return (pd.Timestamp.utcnow() - pd.tseries.offsets.BDay(1)).date()
+
 def configurar_autenticacion_local():
     ruta_script = os.path.abspath(__file__)
     ruta_base = os.path.dirname(os.path.dirname(ruta_script))
@@ -28,7 +39,7 @@ def cargar_configuracion():
         print("[ERROR] No se encontro config.json")
         return None
 
-def extraer_cadena_opciones(ticker_symbol):
+def extraer_cadena_opciones(ticker_symbol, fecha_logica_mercado):
     print(f"[INFO] Descargando datos para {ticker_symbol} desde Yahoo Finance...")
     ticker = yf.Ticker(ticker_symbol)
     expiraciones = ticker.options
@@ -54,7 +65,7 @@ def extraer_cadena_opciones(ticker_symbol):
         todas_las_opciones.extend([calls, puts])
 
     df_final = pd.concat(todas_las_opciones, ignore_index=True)
-    df_final['fecha_captura'] = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    df_final['fecha_captura'] = fecha_logica_mercado.strftime('%Y-%m-%d')
     df_final['ticker'] = ticker_symbol
     
     print(f"[INFO] Extraccion completa para {ticker_symbol}. Total de contratos: {len(df_final)}")
@@ -87,7 +98,8 @@ def main():
 
     activos = list(config["activos_operativos"].keys())
     bucket_datalake = "datalake-quant-451704"
-    fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
+    fecha_logica_mercado = obtener_fecha_logica_mercado()
+    fecha_str = fecha_logica_mercado.strftime('%Y%m%d')
     
     print(f"[INFO] Se encontraron {len(activos)} activos en config.json: {activos}\n")
     
@@ -96,7 +108,7 @@ def main():
         print(f"[INFO] INICIANDO EXTRACCION PARA: {ticker}")
         print(f"========================================")
         
-        df_opciones = extraer_cadena_opciones(ticker)
+        df_opciones = extraer_cadena_opciones(ticker, fecha_logica_mercado)
         
         if df_opciones is not None:
             ruta_gcs = f"opciones/bronce/{ticker}_{fecha_str}.parquet"

@@ -32,12 +32,15 @@ def extraer_precio_diario(ticker_symbol):
     print(f"[INFO] Descargando vela diaria (OHLCV) para {ticker_symbol}...")
     ticker = yf.Ticker(ticker_symbol)
     
-    # Descargamos solo la vela del dia actual
-    df_precio = ticker.history(period="1d")
+    # Descargamos multiples dias para identificar la ultima sesion real disponible.
+    df_precio = ticker.history(period="7d")
     
     if df_precio.empty:
         print(f"[WARN] No se encontraron datos de precio para {ticker_symbol} hoy.")
         return None
+
+    fecha_logica = pd.to_datetime(df_precio.index).max().date()
+    df_precio = df_precio.loc[df_precio.index.date == fecha_logica].copy()
         
     df_precio = df_precio.reset_index()
     
@@ -89,7 +92,6 @@ def main():
 
     activos = list(config["activos_operativos"].keys())
     bucket_datalake = "datalake-quant-451704"
-    fecha_str = datetime.now(timezone.utc).strftime('%Y%m%d')
     
     print(f"[INFO] Procesando precios para {len(activos)} activos: {activos}\n")
     
@@ -100,6 +102,7 @@ def main():
         df_precio = extraer_precio_diario(ticker)
         
         if df_precio is not None:
+            fecha_str = pd.to_datetime(df_precio['fecha']).max().strftime('%Y%m%d')
             ruta_gcs = f"precios/bronce/{ticker}_{fecha_str}.parquet"
             subir_a_datalake(df_precio, bucket_datalake, ruta_gcs)
             activos_procesados += 1
