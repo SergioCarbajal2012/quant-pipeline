@@ -82,6 +82,11 @@ def calcular_total_gex(df_opciones, spot_price, risk_free_rate):
     total_gex = gex_contrato[es_call].sum() - gex_contrato[es_put].sum()
     return total_gex
 
+def safe_float(val, default=0.0):
+    if val is None or pd.isna(val):
+        return default
+    return float(val)
+
 def main():
     print("Iniciando Transformacion Capa Plata (Con Auto-Recuperacion CDMX)")
     configurar_autenticacion_local()
@@ -114,9 +119,9 @@ def main():
         print("[ERROR] Datos Macro no encontrados. Abortando Capa Plata.")
         return
 
-    tasa_10y = float(df_macro['ten_year_rate'].iloc[0]) if 'ten_year_rate' in df_macro else 0.0
-    vix = float(df_macro['vix'].iloc[0]) if 'vix' in df_macro else 0.0
-    dxy = float(df_macro['dxy'].iloc[0]) if 'dxy' in df_macro else 0.0
+    tasa_10y = safe_float(df_macro['ten_year_rate'].iloc[0]) if 'ten_year_rate' in df_macro else 0.0
+    vix = safe_float(df_macro['vix'].iloc[0]) if 'vix' in df_macro else 0.0
+    dxy = safe_float(df_macro['dxy'].iloc[0]) if 'dxy' in df_macro else 0.0
 
     filas_plata = []
 
@@ -125,10 +130,10 @@ def main():
         if df_px is None or df_px.empty:
             continue
             
-        apertura = float(df_px['apertura'].iloc[-1])
-        maximo = float(df_px['maximo'].iloc[-1])
-        minimo = float(df_px['minimo'].iloc[-1])
-        cierre = float(df_px['cierre'].iloc[-1])
+        apertura = safe_float(df_px['apertura'].iloc[-1])
+        maximo = safe_float(df_px['maximo'].iloc[-1])
+        minimo = safe_float(df_px['minimo'].iloc[-1])
+        cierre = safe_float(df_px['cierre'].iloc[-1])
         volumen = int(df_px['volumen'].iloc[-1])
 
         df_opc = descargar_parquet_gcs(bucket_name, f"opciones/bronce/{ticker}_{fecha_str}.parquet", f"t_op_{ticker}.parquet")
