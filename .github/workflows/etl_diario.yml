@@ -37,17 +37,21 @@ jobs:
       run: echo "PIPELINE_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
 
     - name: 5. Ejecutar ETL de Precios
+      continue-on-error: true
       run: python scripts/etl_precios.py
 
     - name: 6. Ejecutar ETL de Opciones
+      continue-on-error: true
       run: python scripts/etl_opciones.py
 
     - name: 7. Ejecutar ETL Macro (FRED/Yahoo)
+      continue-on-error: true
       env:
         FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
       run: python scripts/etl_macro.py
 
     - name: 8. Ejecutar ETL Sentimiento (RSS + FinBERT)
+      continue-on-error: true
       env:
         HF_TOKEN: ${{ secrets.HF_API_TOKEN }}
       run: |
@@ -59,6 +63,7 @@ jobs:
         fi
 
     - name: 9. Ejecutar ETL Earnings (Calendario)
+      continue-on-error: true
       run: python scripts/extraccion_earnings.py
     
     - name: 10. Ejecutar Transformacion Capa Plata (Total GEX y Feature Store)
