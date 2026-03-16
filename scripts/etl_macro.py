@@ -15,15 +15,34 @@ def configurar_autenticacion_local():
 
 def extraer_serie_fred(api_key, series_id):
     """Extrae el valor mas reciente de cualquier serie de la FRED."""
-    url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json&sort_order=desc&limit=1"
+    url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json&sort_order=asc&limit=60"
     try:
         response = requests.get(url)
         data = response.json()
-        observacion = data['observations'][0]
-        value = observacion['value']
-        fecha_obs = pd.to_datetime(observacion['date']).date()
-        # La FRED a veces devuelve '.' si el dato no esta disponible aun
-        return (float(value) if value != '.' else None), fecha_obs
+
+        observaciones = data.get('observations', [])
+        if not observaciones:
+            return None, None
+
+        df_obs = pd.DataFrame(observaciones)
+        if df_obs.empty or 'value' not in df_obs.columns or 'date' not in df_obs.columns:
+            return None, None
+
+        df_obs['date'] = pd.to_datetime(df_obs['date'], errors='coerce')
+        df_obs['value'] = pd.to_numeric(df_obs['value'], errors='coerce')
+        df_obs = df_obs[['date', 'value']].dropna(subset=['date'])
+
+        if df_obs.empty:
+            return None, None
+
+        # Arrastra el ultimo valor valido para cubrir huecos puntuales de publicacion.
+        df_obs['value'] = df_obs['value'].ffill()
+
+        if df_obs['value'].dropna().empty:
+            return None, None
+
+        ultima_fila = df_obs.iloc[-1]
+        return float(ultima_fila['value']), ultima_fila['date'].date()
     except Exception as e:
         print(f"[ERROR] Fallo al extraer {series_id} de FRED: {e}")
         return None, None
@@ -37,7 +56,13 @@ def extraer_yahoo_macro():
         try:
             data = yf.Ticker(ticker).history(period="10d")
             if not data.empty:
-                resultados[nombre] = data['Close'].iloc[-1]
+                data = data.ffill()
+                close_series = data['Close'].ffill()
+                if close_series.dropna().empty:
+                    resultados[nombre] = None
+                    continue
+
+                resultados[nombre] = float(close_series.iloc[-1])
                 fechas.append(pd.to_datetime(data.index).max().date())
         except:
             resultados[nombre] = None
