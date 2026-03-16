@@ -99,7 +99,7 @@ def main():
             titulares_frescos = obtener_noticias_frescas_rss(ticker)
 
             if not titulares_frescos:
-                resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
+                resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0, "titulares_raw": ""})
                 continue
 
             # Inferencia con FinBERT
@@ -108,7 +108,7 @@ def main():
             if analisis is None:
                 print(f"    [ERROR] Fallo de API en {ticker}")
                 activos_fallidos.append(ticker)
-                resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0})
+                resultados.append({"ticker": ticker, "sentiment_score": 0.0, "total_noticias": 0, "titulares_raw": " | ".join(titulares_frescos)})
                 continue
 
             score_acumulado = 0.0
@@ -127,7 +127,8 @@ def main():
             resultados.append({
                 "ticker": ticker,
                 "sentiment_score": intensidad_final,
-                "total_noticias": len(titulares_frescos)
+                "total_noticias": len(titulares_frescos),
+                "titulares_raw": " | ".join(titulares_frescos)
             })
         finally:
             if (i + 1) % 5 == 0:
