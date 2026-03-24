@@ -73,7 +73,12 @@ def calcular_total_gex(df_opciones, spot_price, risk_free_rate):
     pdf_d1 = norm.pdf(d1)
     Gamma = pdf_d1 / (S * sigma * np.sqrt(T))
 
-    OI = df['openInterest'].fillna(0)
+    oi_serie = df['openInterest'].replace(0, np.nan)
+    if 'volume' in df.columns:
+        vol_serie = df['volume'].replace(0, np.nan)
+        OI = oi_serie.fillna(vol_serie).fillna(0)
+    else:
+        OI = oi_serie.fillna(0)
     gex_contrato = Gamma * OI * 100 * S
     
     es_call = df['tipo'] == 'call'
