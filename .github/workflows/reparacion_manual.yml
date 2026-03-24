@@ -1,0 +1,63 @@
+name: Reparacion Quirurgica Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      fechas:
+        description: "Lista de fechas separadas por coma (YYYY-MM-DD,YYYY-MM-DD)"
+        required: false
+        default: ""
+      fecha_inicio:
+        description: "Fecha inicio YYYY-MM-DD"
+        required: false
+        default: ""
+      fecha_fin:
+        description: "Fecha fin YYYY-MM-DD"
+        required: false
+        default: ""
+
+jobs:
+  reparacion_quirurgica:
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONUNBUFFERED: 1
+
+    steps:
+      - name: 1. Descargar codigo del repositorio
+        uses: actions/checkout@v3
+
+      - name: 2. Configurar entorno Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: 3. Instalar dependencias del proyecto
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 4. Inyectar llave secreta de Google Cloud
+        env:
+          GCP_SECRETO: ${{ secrets.GCP_CREDENTIALS }}
+        run: |
+          echo "$GCP_SECRETO" > gcp_credentials.json
+
+      - name: 5. Ejecutar reparador quirurgico
+        run: |
+          CMD="python scripts/reparador_quirurgico.py"
+
+          if [ -n "${{ github.event.inputs.fechas }}" ]; then
+            CMD="$CMD --fechas '${{ github.event.inputs.fechas }}'"
+          fi
+
+          if [ -n "${{ github.event.inputs.fecha_inicio }}" ]; then
+            CMD="$CMD --fecha-inicio '${{ github.event.inputs.fecha_inicio }}'"
+          fi
+
+          if [ -n "${{ github.event.inputs.fecha_fin }}" ]; then
+            CMD="$CMD --fecha-fin '${{ github.event.inputs.fecha_fin }}'"
+          fi
+
+          echo "[INFO] Ejecutando: $CMD"
+          eval "$CMD"

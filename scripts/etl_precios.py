@@ -33,14 +33,25 @@ def extraer_precio_diario(ticker_symbol):
     ticker = yf.Ticker(ticker_symbol)
     
     # Descargamos multiples dias para identificar la ultima sesion real disponible.
-    df_precio = ticker.history(period="7d")
-    
-    if df_precio.empty:
+    df_hist = ticker.history(period="15d")
+
+    if df_hist.empty:
         print(f"[WARN] No se encontraron datos de precio para {ticker_symbol} hoy.")
         return None
 
+    # Rellenar precios con el ultimo cierre valido conocido.
+    cols_precio = ['Open', 'High', 'Low', 'Close']
+    columnas_disponibles = [col for col in cols_precio if col in df_hist.columns]
+    if columnas_disponibles:
+        df_hist[columnas_disponibles] = df_hist[columnas_disponibles].ffill()
+
+    # Si el volumen esta nulo, asumimos 0 transacciones en esos dias sin reporte.
+    if 'Volume' in df_hist.columns:
+        df_hist['Volume'] = df_hist['Volume'].fillna(0)
+
+    # Tras la limpieza, nos quedamos unicamente con la ultima fila curada.
+    df_precio = df_hist.iloc[[-1]].copy()
     fecha_logica = pd.to_datetime(df_precio.index).max().date()
-    df_precio = df_precio.loc[df_precio.index.date == fecha_logica].copy()
         
     df_precio = df_precio.reset_index()
     

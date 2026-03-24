@@ -54,7 +54,7 @@ def extraer_yahoo_macro():
     fechas = []
     for nombre, ticker in tickers.items():
         try:
-            data = yf.Ticker(ticker).history(period="10d")
+            data = yf.Ticker(ticker).history(period="15d")
             if not data.empty:
                 data = data.ffill()
                 close_series = data['Close'].ffill()
