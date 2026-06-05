@@ -1,9 +1,6 @@
 name: ETL Opciones Diario
 
 on:
-  schedule:
-    # Ejecutar a las 12:00 UTC (6:00 AM CST) de Lunes a Viernes
-    - cron: '0 12 * * 1-5'
   workflow_dispatch:
 
 jobs:
